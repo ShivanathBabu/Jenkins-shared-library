@@ -239,6 +239,16 @@ Description: ${it.description ?: 'N/A'}
     }
 }
 
+    stage('check status'){
+        when{
+            expression { params.deploy_to = "dev" }
+        }
+        steps{
+            script{
+                echo "Run functional test cases"
+            }
+        }
+    }
            stage ('Trigger Deploy') {
             when {
                 expression {params.deploy}
