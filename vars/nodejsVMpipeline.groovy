@@ -147,35 +147,56 @@ def call(configMap) {
             }
         }
 
-        stage('Check Scan Results') {
+       stage('Check Scan Results') {
     steps {
         script {
             withAWS(credentials: 'aws-creds', region: REGION) {
 
+                // Get Image Digest
+                def imageDigest = sh(
+                    script: """
+                        aws ecr describe-images \
+                          --repository-name ${PROJECT}/${COMPONENT} \
+                          --image-ids imageTag=${appVersion} \
+                          --region ${REGION} \
+                          --query 'imageDetails[0].imageDigest' \
+                          --output text
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                echo "Image Digest: ${imageDigest}"
+
+                // Wait for Scan Completion
                 timeout(time: 5, unit: 'MINUTES') {
                     waitUntil {
+
+                        sleep(time: 10, unit: 'SECONDS')
+
                         def status = sh(
                             script: """
                                 aws ecr describe-image-scan-findings \
                                   --repository-name ${PROJECT}/${COMPONENT} \
-                                  --image-id imageTag=${appVersion} \
+                                  --image-id imageDigest=${imageDigest} \
                                   --region ${REGION} \
                                   --query 'imageScanStatus.status' \
-                                  --output text
+                                  --output text 2>/dev/null || echo IN_PROGRESS
                             """,
                             returnStdout: true
                         ).trim()
 
-                        echo "Current scan status: ${status}"
+                        echo "Current Scan Status: ${status}"
+
                         return status == "COMPLETE"
                     }
                 }
 
+                // Get Scan Findings
                 def findings = sh(
                     script: """
                         aws ecr describe-image-scan-findings \
                           --repository-name ${PROJECT}/${COMPONENT} \
-                          --image-id imageTag=${appVersion} \
+                          --image-id imageDigest=${imageDigest} \
                           --region ${REGION} \
                           --output json
                     """,
@@ -184,14 +205,34 @@ def call(configMap) {
 
                 def json = readJSON text: findings
 
-                def highCritical = json.imageScanFindings.findings.findAll {
-                    it.severity == "HIGH" || it.severity == "CRITICAL"
+                // Handle null findings safely
+                def findingsList = json.imageScanFindings.findings ?: []
+
+                def highCritical = findingsList.findAll {
+                    it.severity in ['HIGH', 'CRITICAL']
                 }
 
-                if (highCritical) {
-                    error("Found ${highCritical.size()} HIGH/CRITICAL vulnerabilities.")
+                echo "Total Vulnerabilities Found: ${findingsList.size()}"
+                echo "HIGH/CRITICAL Vulnerabilities: ${highCritical.size()}"
+
+                if (highCritical.size() > 0) {
+
+                    echo "===== HIGH / CRITICAL VULNERABILITIES ====="
+
+                    highCritical.each {
+                        echo """
+Name       : ${it.name}
+Severity   : ${it.severity}
+Package    : ${it.attributes?.find { a -> a.key == 'package_name' }?.value ?: 'N/A'}
+Description: ${it.description ?: 'N/A'}
+---------------------------------------------
+"""
+                    }
+
+                    error("Build Failed: Found ${highCritical.size()} HIGH/CRITICAL vulnerabilities.")
+
                 } else {
-                    echo "No HIGH/CRITICAL vulnerabilities found."
+                    echo "✅ No HIGH or CRITICAL vulnerabilities found."
                 }
             }
         }
