@@ -147,40 +147,56 @@ def call(configMap) {
             }
         }
 
-              stage('Check Scan Results') {
-            steps {
-                script {
-                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
-                    // Fetch scan findings
-                        def findings = sh(
+        stage('Check Scan Results') {
+    steps {
+        script {
+            withAWS(credentials: 'aws-creds', region: REGION) {
+
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitUntil {
+                        def status = sh(
                             script: """
                                 aws ecr describe-image-scan-findings \
-                                --repository-name ${PROJECT}/${COMPONENT} \
-                                --image-id imageTag=${appVersion} \
-                                --region ${REGION} \
-                                --output json
+                                  --repository-name ${PROJECT}/${COMPONENT} \
+                                  --image-id imageTag=${appVersion} \
+                                  --region ${REGION} \
+                                  --query 'imageScanStatus.status' \
+                                  --output text
                             """,
                             returnStdout: true
                         ).trim()
 
-                        // Parse JSON
-                        def json = readJSON text: findings
-
-                        def highCritical = json.imageScanFindings.findings.findAll {
-                            it.severity == "HIGH" || it.severity == "CRITICAL"
-                        }
-
-                        if (highCritical.size() > 0) {
-                            echo "❌ Found ${highCritical.size()} HIGH/CRITICAL vulnerabilities!"
-                            currentBuild.result = 'FAILURE'
-                            error("Build failed due to vulnerabilities")
-                        } else {
-                            echo "✅ No HIGH/CRITICAL vulnerabilities found."
-                        }
+                        echo "Current scan status: ${status}"
+                        return status == "COMPLETE"
                     }
+                }
+
+                def findings = sh(
+                    script: """
+                        aws ecr describe-image-scan-findings \
+                          --repository-name ${PROJECT}/${COMPONENT} \
+                          --image-id imageTag=${appVersion} \
+                          --region ${REGION} \
+                          --output json
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                def json = readJSON text: findings
+
+                def highCritical = json.imageScanFindings.findings.findAll {
+                    it.severity == "HIGH" || it.severity == "CRITICAL"
+                }
+
+                if (highCritical) {
+                    error("Found ${highCritical.size()} HIGH/CRITICAL vulnerabilities.")
+                } else {
+                    echo "No HIGH/CRITICAL vulnerabilities found."
                 }
             }
         }
+    }
+}
 
            stage ('Trigger Deploy') {
             when {
