@@ -245,7 +245,8 @@ Description: ${it.description ?: 'N/A'}
             }
             steps {
                 script {
-                    build job: 'catalogue-cd',
+                   // build job: 'catalogue-cd',
+                    build job: '../catalogue-cd',
                     parameters: [
                             string(name: 'appVersion', value: '${appVersion}'),
                             string(name: 'deploy_to', value: 'dev')
