@@ -102,7 +102,7 @@ def call(configMap) {
                 }
             }
         }
-        stage("Trigger Deploy ")
+        stage("Trigger Deploy ") {
         when {
             expression {params.deploy}
         }
@@ -116,6 +116,7 @@ def call(configMap) {
                     propagate: false,
                     wait: false
             }
+        }
         }
 
         }
