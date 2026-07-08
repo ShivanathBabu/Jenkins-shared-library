@@ -19,9 +19,9 @@ def call(configMap) {
          parameters {
         booleanParam(name: 'deploy', defaultValue: false, description: 'Toggle this value')
         }
-        stage {
+        stages {
 
-            stages("App version"){
+            stage("App version"){
                 steps {
                     script {
                        def packageJson = readJSON file: 'package.json'
@@ -32,7 +32,7 @@ def call(configMap) {
                 }
             }
 
-            stages("Install Dependencies"){
+            stage("Install Dependencies"){
                 steps{
                     script{
                         sh """
@@ -45,7 +45,7 @@ def call(configMap) {
                 }
             }
 
-            stages("unti Testing"){
+            stage("unti Testing"){
                 steps{
                     script{
                         echo "unit tests"
@@ -53,7 +53,7 @@ def call(configMap) {
                 }
             }
 
-            stages("Docker Build"){
+            stage("Docker Build"){
                 steps{
                     script{
                         withAWS(credentials: 'aws-creds', region: 'us-east-1') {
