@@ -4,6 +4,10 @@ def call(Map configMap) {
         label 'AGENT-1'
     }
 
+    environment {
+        greeting = configMap.get('greeting')
+    }
+
     options {
         timeout(time: 30, unit: 'MINUTES')
         disableConcurrentBuilds()
