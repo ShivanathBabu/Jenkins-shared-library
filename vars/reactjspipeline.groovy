@@ -108,8 +108,8 @@ def call(configMap) {
         }
         steps {
             script {
-                build job: '../${COMPONENT}-cd'
-              parameters: [
+                build job: "../${COMPONENT}-cd"
+                parameters: [
                             string(name: 'appVersion', value: '${appVersion}'),
                             string(name: 'deploy_to', value: 'dev')
                     ],
