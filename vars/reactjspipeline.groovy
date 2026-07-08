@@ -11,8 +11,8 @@ def call(configMap) {
         environment {
             appVersion = ''
             ACC_ID = '506572015597'
-            PROJECT = 'Roboshop'
-            COMPONENT = 'USER'
+            PROJECT = configMap.get('project')
+            COMPONENT = configMap.get('component')
             REGION = 'us-east-1'
         }
 
@@ -68,97 +68,40 @@ def call(configMap) {
                 }
             }
 
-            stage('Check Scan Results') {
-    steps {
-        script {
-            withAWS(credentials: 'aws-creds', region: REGION) {
-
-                // Get Image Digest
-                def imageDigest = sh(
-                    script: """
-                        aws ecr describe-images \
-                          --repository-name ${PROJECT}/${COMPONENT} \
-                          --image-ids imageTag=${appVersion} \
-                          --region ${REGION} \
-                          --query 'imageDetails[0].imageDigest' \
-                          --output text
-                    """,
-                    returnStdout: true
-                ).trim()
-
-                echo "Image Digest: ${imageDigest}"
-
-                // Wait for Scan Completion
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitUntil {
-
-                        sleep(time: 10, unit: 'SECONDS')
-
-                        def status = sh(
+         stage('Check Scan Results') {
+            steps {
+                script {
+                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                    // Fetch scan findings
+                        def findings = sh(
                             script: """
                                 aws ecr describe-image-scan-findings \
-                                  --repository-name ${PROJECT}/${COMPONENT} \
-                                  --image-id imageDigest=${imageDigest} \
-                                  --region ${REGION} \
-                                  --query 'imageScanStatus.status' \
-                                  --output text 2>/dev/null || echo IN_PROGRESS
+                                --repository-name ${PROJECT}/${COMPONENT} \
+                                --image-id imageTag=${appVersion} \
+                                --region ${REGION} \
+                                --output json
                             """,
                             returnStdout: true
                         ).trim()
 
-                        echo "Current Scan Status: ${status}"
+                        // Parse JSON
+                        def json = readJSON text: findings
 
-                        return status == "COMPLETE"
+                        def highCritical = json.imageScanFindings.findings.findAll {
+                            it.severity == "HIGH" || it.severity == "CRITICAL"
+                        }
+
+                        if (highCritical.size() > 0) {
+                            echo "❌ Found ${highCritical.size()} HIGH/CRITICAL vulnerabilities!"
+                            currentBuild.result = 'FAILURE'
+                            error("Build failed due to vulnerabilities")
+                        } else {
+                            echo "✅ No HIGH/CRITICAL vulnerabilities found."
+                        }
                     }
-                }
-
-                // Get Scan Findings
-                def findings = sh(
-                    script: """
-                        aws ecr describe-image-scan-findings \
-                          --repository-name ${PROJECT}/${COMPONENT} \
-                          --image-id imageDigest=${imageDigest} \
-                          --region ${REGION} \
-                          --output json
-                    """,
-                    returnStdout: true
-                ).trim()
-
-                def json = readJSON text: findings
-
-                // Handle null findings safely
-                def findingsList = json.imageScanFindings.findings ?: []
-
-                def highCritical = findingsList.findAll {
-                    it.severity in ['HIGH', 'CRITICAL']
-                }
-
-                echo "Total Vulnerabilities Found: ${findingsList.size()}"
-                echo "HIGH/CRITICAL Vulnerabilities: ${highCritical.size()}"
-
-                if (highCritical.size() > 0) {
-
-                    echo "===== HIGH / CRITICAL VULNERABILITIES ====="
-
-                    highCritical.each {
-                        echo """
-Name       : ${it.name}
-Severity   : ${it.severity}
-Package    : ${it.attributes?.find { a -> a.key == 'package_name' }?.value ?: 'N/A'}
-Description: ${it.description ?: 'N/A'}
----------------------------------------------
-"""
-                    }
-
-                    error("Build Failed: Found ${highCritical.size()} HIGH/CRITICAL vulnerabilities.")
-
-                } else {
-                    echo "✅ No HIGH or CRITICAL vulnerabilities found."
                 }
             }
         }
-    }
-}
         stage("Trigger Deploy ")
         when {
             expression {params.deploy}
