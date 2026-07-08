@@ -56,12 +56,15 @@ def call(configMap) {
             stages("Docker Build"){
                 steps{
                     script{
+                        withAWS(credentials: 'aws-creds', region: 'us-east-1') {
                         sh """
+                        export DOCKER_BUILDKIT=0
                         aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${ACC_ID}.dkr.ecr.${REGION}.amazonaws.com
                         docker build -t ${ACC_ID}.dkr.ecr.us-east-1.amazonaws.com/${PROJECT}/${COMPONENT}:${appVersion} .
                         docker push ${ACC_ID}.dkr.ecr.us-east-1.amazonaws.com/${PROJECT}/${COMPONENT}:${appVersion}
                         """
                     }
+                  }
                 }
             }
 
